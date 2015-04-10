@@ -13,7 +13,12 @@
 #import "UUMessageFrame.h"
 #import "UUMessage.h"
 
+#define TABLE_HEADER_HEIGHT 44
+#define LOAD_PAGE_NUM 3
 @interface RootViewController ()<UUInputFunctionViewDelegate,UUMessageCellDelegate,UITableViewDataSource,UITableViewDelegate>
+{
+    CGFloat scrollOffsetAfterLoading;
+}
 
 @property (strong, nonatomic) ChatModel *chatModel;
 
@@ -28,7 +33,8 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    
+    scrollOffsetAfterLoading = 0;
+
     [self initBar];
     [self loadBaseViewsAndData];
 }
@@ -58,18 +64,18 @@
 }
 
 - (void)addRandomChatItems{
-    int pageNum = 3;
-    //wait a second, so that the indicator can be seen 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self.chatModel addRandomItemsToDataSource:pageNum];
-        if (self.chatModel.dataSource.count>pageNum) {
-            NSIndexPath *indexPath = [NSIndexPath indexPathForRow:pageNum inSection:0];
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                [self.chatTableView reloadData];
-                [self.chatTableView scrollToRowAtIndexPath:indexPath atScrollPosition:UITableViewScrollPositionTop animated:NO];
-            });
-        }
-    });
+    [self.chatModel addRandomItemsToDataSource:LOAD_PAGE_NUM];
+    if (self.chatModel.dataSource.count>LOAD_PAGE_NUM) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            //                readyToLoadChatData = YES;
+            NSIndexPath *indexPath = [NSIndexPath indexPathForRow:LOAD_PAGE_NUM inSection:0];
+            [self.chatTableView reloadData];
+            [self.chatTableView scrollToRowAtIndexPath:indexPath atScrollPosition:UITableViewScrollPositionTop animated:NO];
+            CGPoint tableViewOffset = _chatTableView.contentOffset;
+            tableViewOffset.y -= scrollOffsetAfterLoading;
+            _chatTableView.contentOffset = tableViewOffset;
+        });
+    }
 }
 
 - (void)loadBaseViewsAndData
@@ -85,12 +91,14 @@
     
     [self loadRefreshIndicator];
     
+    [self.chatModel addRandomItemsToDataSource:LOAD_PAGE_NUM];
     [self.chatTableView reloadData];
+    [self tableViewScrollToBottom];
 }
 
 -(void)loadRefreshIndicator{
     CGRect screenFrame = [[UIScreen mainScreen] bounds];
-    self.chatTableView.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, screenFrame.size.width, 44)];
+    self.chatTableView.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, screenFrame.size.width, TABLE_HEADER_HEIGHT)];
     CGRect indicatorFrame = self.chatTableView.frame;
     UIActivityIndicatorView *refreshView = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
     indicatorFrame = refreshView.frame;
@@ -197,17 +205,26 @@
     [self.view endEditing:YES];
 }
 
-- (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath{
-    if(indexPath.row == 0){
-        [self addRandomChatItems];
-    }
-}
-
 #pragma mark - cellDelegate
 - (void)headImageDidClick:(UUMessageCell *)cell userId:(NSString *)userId{
     // headIamgeIcon is clicked
     UIAlertView *alert = [[UIAlertView alloc]initWithTitle:@"Tip" message:@"HeadImageClick !!!" delegate:nil cancelButtonTitle:@"sure" otherButtonTitles:nil];
     [alert show];
+}
+
+- (void)scrollViewDidScroll:(UIScrollView *)scrollView{
+    [NSObject cancelPreviousPerformRequestsWithTarget:self];
+    //enshore that the end of scroll is fired because apple are twats...
+    [self performSelector:@selector(scrollViewDidEndScrollingAnimation:) withObject:nil afterDelay:0.1];
+}
+
+-(void)scrollViewDidEndScrollingAnimation:(UIScrollView *)scrollView{
+    [NSObject cancelPreviousPerformRequestsWithTarget:self];
+    if(_chatTableView.contentOffset.y<0){
+        CGFloat statusHeight = [[UIApplication sharedApplication] statusBarFrame].size.height;
+        scrollOffsetAfterLoading = abs(_chatTableView.contentOffset.y)-statusHeight;
+        [self addRandomChatItems];
+    }
 }
 
 @end
